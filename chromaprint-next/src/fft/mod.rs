@@ -4,13 +4,19 @@ use realfft::RealFftPlanner;
 use realfft::RealToComplex;
 use std::sync::Arc;
 
+/// Round up to the next power of two.
+fn next_power_of_two(n: usize) -> usize {
+    n.next_power_of_two()
+}
+
 /// FFT processor that handles frame slicing, windowing, and FFT computation.
 pub struct FftProcessor {
     frame_size: usize,
     increment: usize,
     window: Vec<f32>,
-    // Ring buffer for incoming samples
+    // Ring buffer for incoming samples (power-of-2 sized for fast masking)
     ring_buffer: Vec<i16>,
+    ring_mask: usize,
     ring_write: usize,
     ring_read: usize,
     ring_count: usize,
@@ -36,14 +42,15 @@ impl FftProcessor {
         let fft_scratch = fft.make_scratch_vec();
         let power_spectrum = vec![0.0f32; frame_size / 2 + 1];
 
-        // Ring buffer large enough to hold at least 2 frames
-        let ring_size = frame_size * 4;
+        // Power-of-2 ring buffer for bitmask indexing
+        let ring_size = next_power_of_two(frame_size * 4);
 
         Self {
             frame_size,
             increment,
             window,
             ring_buffer: vec![0i16; ring_size],
+            ring_mask: ring_size - 1,
             ring_write: 0,
             ring_read: 0,
             ring_count: 0,
@@ -67,31 +74,55 @@ impl FftProcessor {
     where
         F: FnMut(&[f32]),
     {
-        let ring_len = self.ring_buffer.len();
+        let ring_mask = self.ring_mask;
+        let frame_size = self.frame_size;
+        let increment = self.increment;
+        let mut pos = 0;
 
-        // Interleave writing with processing to avoid ring buffer overflow.
-        for &sample in samples {
-            self.ring_buffer[self.ring_write] = sample;
-            self.ring_write = (self.ring_write + 1) % ring_len;
-            self.ring_count += 1;
+        while pos < samples.len() {
+            // Bulk-copy as many samples as possible into the ring buffer
+            let space_before_wrap = (ring_mask + 1) - self.ring_write;
+            let space_before_full = (ring_mask + 1) - self.ring_count;
+            let can_write = space_before_wrap
+                .min(space_before_full)
+                .min(samples.len() - pos);
+            // Limit to what gets us to exactly one frame, so we don't overshoot
+            let need_for_frame = frame_size.saturating_sub(self.ring_count);
+            let to_copy = can_write.min(need_for_frame.max(1));
+
+            self.ring_buffer[self.ring_write..self.ring_write + to_copy]
+                .copy_from_slice(&samples[pos..pos + to_copy]);
+            self.ring_write = (self.ring_write + to_copy) & ring_mask;
+            self.ring_count += to_copy;
+            pos += to_copy;
 
             // Process frames as soon as we have enough data
-            while self.ring_count >= self.frame_size {
+            while self.ring_count >= frame_size {
                 self.process_frame();
                 callback(&self.power_spectrum);
-                self.ring_read = (self.ring_read + self.increment) % ring_len;
-                self.ring_count -= self.increment;
+                self.ring_read = (self.ring_read + increment) & ring_mask;
+                self.ring_count -= increment;
             }
         }
     }
 
     fn process_frame(&mut self) {
-        let ring_len = self.ring_buffer.len();
+        let ring_mask = self.ring_mask;
+        let ring_read = self.ring_read;
 
-        // Apply window and convert i16 -> f32
-        for i in 0..self.frame_size {
-            let ring_idx = (self.ring_read + i) % ring_len;
-            self.fft_input[i] = self.ring_buffer[ring_idx] as f32 * self.window[i];
+        // Check if the frame wraps around the ring buffer
+        let end = ring_read + self.frame_size;
+        if end <= ring_mask + 1 {
+            // Contiguous: no wrapping needed
+            for i in 0..self.frame_size {
+                self.fft_input[i] = self.ring_buffer[ring_read + i] as f32 * self.window[i];
+            }
+        } else {
+            // Wrapping: apply mask per element
+            for i in 0..self.frame_size {
+                let ring_idx = (ring_read + i) & ring_mask;
+                self.fft_input[i] = self.ring_buffer[ring_idx] as f32 * self.window[i];
+            }
         }
 
         // Compute real FFT
