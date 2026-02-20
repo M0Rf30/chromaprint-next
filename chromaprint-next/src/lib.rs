@@ -24,6 +24,7 @@ pub mod error;
 pub mod fft;
 pub mod fingerprint;
 pub mod pipeline;
+pub mod simd;
 pub mod types;
 
 pub use error::{Error, Result};

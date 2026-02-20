@@ -125,22 +125,26 @@ impl AvResampleContext {
         dst_size: usize,
     ) -> usize {
         let src_size = src.len() as i32;
+        let filter_length = self.filter_length;
+        let filter_bank = &self.filter_bank;
+        let phase_mask = self.phase_mask;
+        let phase_shift = self.phase_shift;
+        let src_incr = self.src_incr;
         let mut index = self.index;
         let mut frac = self.frac;
-        let dst_incr_frac = self.dst_incr % self.src_incr;
-        let dst_incr = self.dst_incr / self.src_incr;
+        let dst_incr_frac = self.dst_incr % src_incr;
+        let dst_incr = self.dst_incr / src_incr;
         let mut dst_index = 0usize;
 
         while dst_index < dst_size {
-            let filter_offset =
-                self.filter_length * ((index & self.phase_mask) as usize);
-            let sample_index = index >> self.phase_shift;
+            let filter_offset = filter_length * ((index & phase_mask) as usize);
+            let sample_index = index >> phase_shift;
 
             if sample_index < 0 {
                 let mut val: i32 = 0;
-                for i in 0..self.filter_length as i32 {
+                for i in 0..filter_length as i32 {
                     let si = ((sample_index + i).abs() % src_size) as usize;
-                    val += src[si] as i32 * self.filter_bank[filter_offset + i as usize] as i32;
+                    val += src[si] as i32 * filter_bank[filter_offset + i as usize] as i32;
                 }
                 val = (val + (1 << (FILTER_SHIFT - 1))) >> FILTER_SHIFT;
                 dst[dst_index] = if (val as u32).wrapping_add(32768) > 65535 {
@@ -148,14 +152,17 @@ impl AvResampleContext {
                 } else {
                     val as i16
                 };
-            } else if sample_index + self.filter_length as i32 > src_size {
+            } else if sample_index + filter_length as i32 > src_size {
                 break;
             } else {
+                // Hot path: the check above guarantees si..si+filter_length is within
+                // src bounds, and filter_offset..filter_offset+filter_length is within
+                // filter_bank bounds (phase < phase_count, bank has phase_count+1 phases).
                 let si = sample_index as usize;
-                let mut val: i32 = 0;
-                for i in 0..self.filter_length {
-                    val += src[si + i] as i32 * self.filter_bank[filter_offset + i] as i32;
-                }
+                let mut val: i32 = crate::simd::dot_product_i16(
+                    &src[si..si + filter_length],
+                    &filter_bank[filter_offset..filter_offset + filter_length],
+                );
                 val = (val + (1 << (FILTER_SHIFT - 1))) >> FILTER_SHIFT;
                 dst[dst_index] = if (val as u32).wrapping_add(32768) > 65535 {
                     ((val >> 31) ^ 32767) as i16
@@ -166,21 +173,21 @@ impl AvResampleContext {
 
             frac += dst_incr_frac;
             index += dst_incr;
-            if frac >= self.src_incr {
-                frac -= self.src_incr;
+            if frac >= src_incr {
+                frac -= src_incr;
                 index += 1;
             }
             dst_index += 1;
         }
 
-        *consumed = (index.max(0) >> self.phase_shift) as usize;
+        *consumed = (index.max(0) >> phase_shift) as usize;
         if index >= 0 {
-            index &= self.phase_mask;
+            index &= phase_mask;
         }
 
         self.frac = frac;
         self.index = index;
-        self.dst_incr = dst_incr_frac + self.src_incr * dst_incr;
+        self.dst_incr = dst_incr_frac + src_incr * dst_incr;
 
         dst_index
     }

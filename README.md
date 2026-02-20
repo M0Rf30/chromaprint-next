@@ -4,6 +4,8 @@ A pure-Rust, drop-in replacement for [Chromaprint](https://github.com/acoustid/c
 
 Produces **bit-identical fingerprints** to the C reference implementation across all five algorithm variants, [verified](chromaprint-next/docs/implementation.md#how-each-stage-matches-the-reference) by running both implementations side-by-side on identical inputs and asserting equality of raw fingerprints, encoded strings, and hashes.
 
+**Faster than C** — chromaprint-next outperforms the C reference library by ~4% (269 vs 258 Melem/s at 120s), even though the C version uses Apple's hardware-optimised Accelerate/vDSP for FFT. This is achieved through NEON SIMD intrinsics in the resampler, bounds-check elimination, and careful memory layout. See [benchmarks](chromaprint-next/docs/benchmarks.md) for details.
+
 ## Repository structure
 
 ```
