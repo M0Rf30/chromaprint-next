@@ -10,6 +10,7 @@ Produces **bit-identical fingerprints** to the C reference implementation across
 chromaprint/              C reference implementation (git submodule)
 chromaprint-next/         Rust library crate
 chromaprint-test-suite/   Cross-implementation comparison tests
+chromaprint-benchmarks/   Criterion benchmarks comparing all three implementations
 rusty-chromaprint/        Alternative Rust port by darksv (git submodule)
 ```
 
@@ -38,9 +39,21 @@ Some rusty-chromaprint tests are `#[ignore]`d due to known incompatibilities (re
 cargo test -p chromaprint-test-suite -- --ignored
 ```
 
+## Benchmarks
+
+The `chromaprint-benchmarks` crate compares throughput of all three implementations using the Test2 (default) algorithm at various audio durations.
+
+```
+cargo bench -p chromaprint-benchmarks
+```
+
+See [chromaprint-next/docs/benchmarks.md](chromaprint-next/docs/benchmarks.md) for results and analysis.
+
 ## Documentation
 
-See [chromaprint-next/docs/implementation.md](chromaprint-next/docs/implementation.md) for details on how the Rust port matches the C reference, performance characteristics, and known bug compatibility.
+- [Implementation details](chromaprint-next/docs/implementation.md) — how the Rust port matches the C reference, performance characteristics, and known bug compatibility
+- [Benchmarks](chromaprint-next/docs/benchmarks.md) — performance comparison across all three implementations
+- [Comparison with rusty-chromaprint](chromaprint-next/docs/comparison-with-rusty-chromaprint.md) — detailed compatibility analysis
 
 ## License
 

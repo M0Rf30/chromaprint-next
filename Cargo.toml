@@ -2,5 +2,6 @@
 members = [
     "chromaprint-next",
     "chromaprint-test-suite",
+    "chromaprint-benchmarks",
 ]
 resolver = "2"
