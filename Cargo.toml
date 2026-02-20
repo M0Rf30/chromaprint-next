@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "chromaprint-next",
+    "chromaprint-test-suite",
+]
+resolver = "2"

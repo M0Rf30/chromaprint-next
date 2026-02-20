@@ -1,0 +1,226 @@
+use chromaprint_test_suite::ffi::{
+    CChromaprint, c_decode_fingerprint, c_encode_fingerprint, c_hash_fingerprint,
+};
+use chromaprint_test_suite::utils::{compare_fingerprints, load_raw_audio};
+use chromaprint::{Algorithm, Fingerprinter};
+
+const ALGORITHM_TEST2: i32 = 1;
+
+/// Helper: run both C and Rust implementations on the same input and return their results.
+fn fingerprint_both(
+    data: &[i16],
+    sample_rate: i32,
+    num_channels: i32,
+    algorithm_c: i32,
+    algorithm_rs: Algorithm,
+) -> (Vec<u32>, String, u32, Vec<u32>, String, u32) {
+    // C implementation
+    let c_ctx = CChromaprint::new(algorithm_c);
+    c_ctx.start(sample_rate, num_channels);
+    c_ctx.feed(data);
+    c_ctx.finish();
+    let c_raw = c_ctx.get_raw_fingerprint();
+    let c_encoded = c_ctx.get_fingerprint();
+    let c_hash = c_ctx.get_fingerprint_hash();
+
+    // Rust implementation
+    let mut rs_ctx = Fingerprinter::new(algorithm_rs);
+    rs_ctx.start(sample_rate as u32, num_channels as u16).unwrap();
+    rs_ctx.feed(data).unwrap();
+    rs_ctx.finish().unwrap();
+    let rs_raw = rs_ctx.fingerprint().to_vec();
+    let rs_encoded = rs_ctx.encode();
+    let rs_hash = rs_ctx.hash();
+
+    (c_raw, c_encoded, c_hash, rs_raw, rs_encoded, rs_hash)
+}
+
+#[test]
+fn test_stereo_44100_as_mono() {
+    // This matches the C test_api.cpp TestFp test: loads stereo file but declares 1 channel,
+    // so the interleaved stereo data is treated as mono samples.
+    let data = load_raw_audio("test_stereo_44100.raw");
+
+    let (c_raw, c_encoded, c_hash, rs_raw, rs_encoded, rs_hash) =
+        fingerprint_both(&data, 44100, 1, ALGORITHM_TEST2, Algorithm::Test2);
+
+    // Check against known expected values from C test suite
+    assert_eq!(
+        c_encoded, "AQAAC0kkZUqYREkUnFAXHk8uuMZl6EfO4zu-4ABKFGESWIIMEQE",
+        "C encoded fingerprint doesn't match known value"
+    );
+    assert_eq!(c_hash, 3732003127, "C hash doesn't match known value");
+
+    // Compare C vs Rust
+    compare_fingerprints("stereo_44100_as_mono", &c_raw, &rs_raw);
+    assert_eq!(
+        c_encoded, rs_encoded,
+        "Encoded fingerprints differ: C={}, Rust={}",
+        c_encoded, rs_encoded
+    );
+    assert_eq!(
+        c_hash, rs_hash,
+        "Hashes differ: C={}, Rust={}",
+        c_hash, rs_hash
+    );
+}
+
+#[test]
+fn test_silence() {
+    // 130 * 1024 zero samples at 44100 Hz mono
+    let data = vec![0i16; 130 * 1024];
+
+    let (c_raw, c_encoded, c_hash, rs_raw, rs_encoded, rs_hash) =
+        fingerprint_both(&data, 44100, 1, ALGORITHM_TEST2, Algorithm::Test2);
+
+    // Check known values
+    assert_eq!(c_encoded, "AQAAA0mUaEkSRZEGAA");
+    assert_eq!(c_hash, 627964279);
+    assert_eq!(c_raw.len(), 3);
+    assert!(c_raw.iter().all(|&v| v == 627964279));
+
+    // Compare
+    compare_fingerprints("silence", &c_raw, &rs_raw);
+    assert_eq!(c_encoded, rs_encoded, "Encoded fingerprints differ");
+    assert_eq!(c_hash, rs_hash, "Hashes differ");
+}
+
+#[test]
+fn test_mono_44100() {
+    let data = load_raw_audio("test_mono_44100.raw");
+
+    let (c_raw, c_encoded, c_hash, rs_raw, rs_encoded, rs_hash) =
+        fingerprint_both(&data, 44100, 1, ALGORITHM_TEST2, Algorithm::Test2);
+
+    compare_fingerprints("mono_44100", &c_raw, &rs_raw);
+    assert_eq!(c_encoded, rs_encoded, "Encoded fingerprints differ");
+    assert_eq!(c_hash, rs_hash, "Hashes differ");
+}
+
+#[test]
+fn test_mono_11025() {
+    // At the internal sample rate — no resampling needed
+    let data = load_raw_audio("test_mono_11025.raw");
+
+    let (c_raw, c_encoded, c_hash, rs_raw, rs_encoded, rs_hash) =
+        fingerprint_both(&data, 11025, 1, ALGORITHM_TEST2, Algorithm::Test2);
+
+    compare_fingerprints("mono_11025", &c_raw, &rs_raw);
+    assert_eq!(c_encoded, rs_encoded, "Encoded fingerprints differ");
+    assert_eq!(c_hash, rs_hash, "Hashes differ");
+}
+
+#[test]
+fn test_stereo_44100() {
+    // Stereo with proper 2-channel declaration (will be downmixed to mono)
+    let data = load_raw_audio("test_stereo_44100.raw");
+
+    let (c_raw, c_encoded, c_hash, rs_raw, rs_encoded, rs_hash) =
+        fingerprint_both(&data, 44100, 2, ALGORITHM_TEST2, Algorithm::Test2);
+
+    compare_fingerprints("stereo_44100", &c_raw, &rs_raw);
+    assert_eq!(c_encoded, rs_encoded, "Encoded fingerprints differ");
+    assert_eq!(c_hash, rs_hash, "Hashes differ");
+}
+
+#[test]
+fn test_mono_8000() {
+    let data = load_raw_audio("test_mono_8000.raw");
+
+    let (c_raw, c_encoded, c_hash, rs_raw, rs_encoded, rs_hash) =
+        fingerprint_both(&data, 8000, 1, ALGORITHM_TEST2, Algorithm::Test2);
+
+    compare_fingerprints("mono_8000", &c_raw, &rs_raw);
+    assert_eq!(c_encoded, rs_encoded, "Encoded fingerprints differ");
+    assert_eq!(c_hash, rs_hash, "Hashes differ");
+}
+
+#[test]
+fn test_encode_roundtrip_binary() {
+    let fp: Vec<u32> = vec![1, 0];
+    let algorithm = 55;
+
+    let c_binary = c_encode_fingerprint(&fp, algorithm, false);
+    let expected_binary: Vec<u8> = vec![55, 0, 0, 2, 65, 0];
+
+    assert_eq!(c_binary, expected_binary, "C binary encoding doesn't match expected");
+
+    // Rust encode (only supports base64, so test base64 path)
+    let c_base64 = c_encode_fingerprint(&fp, algorithm, true);
+    let c_base64_str = String::from_utf8(c_base64).unwrap();
+    assert_eq!(c_base64_str, "NwAAAkEA", "C base64 encoding doesn't match");
+
+    // Rust encode uses Algorithm enum which only goes 0-4,
+    // so we test with a valid algorithm for the Rust side
+    let fp2: Vec<u32> = vec![1, 0];
+    let c_b64 = c_encode_fingerprint(&fp2, ALGORITHM_TEST2, true);
+    let c_b64_str = String::from_utf8(c_b64).unwrap();
+    let rs_b64_str = chromaprint::encode_fingerprint(&fp2, Algorithm::Test2);
+    assert_eq!(
+        c_b64_str, rs_b64_str,
+        "Encode mismatch for [1, 0]: C={}, Rust={}",
+        c_b64_str, rs_b64_str
+    );
+}
+
+#[test]
+fn test_decode_known_fingerprint() {
+    let encoded = "AQAAEwkjrUmSJQpUHflR9mjSJMdZpcO_Imdw9dCO9Clu4_wQPvhCB01w6xAtXNcAp5RASgDBhDSCGGIAcwA";
+
+    // C decode
+    let (c_raw, c_algo) = c_decode_fingerprint(encoded.as_bytes(), true)
+        .expect("C decode failed");
+    assert_eq!(c_algo, 1);
+    assert_eq!(c_raw.len(), 19);
+
+    // Rust decode
+    let (rs_raw, rs_algo) = chromaprint::decode_fingerprint(encoded)
+        .expect("Rust decode failed");
+    assert_eq!(rs_algo, Algorithm::Test2);
+    assert_eq!(rs_raw.len(), 19);
+
+    compare_fingerprints("decode_known", &c_raw, &rs_raw);
+}
+
+#[test]
+fn test_simhash() {
+    let fp: Vec<u32> = vec![19681, 22345, 312312, 453425];
+
+    let c_hash = c_hash_fingerprint(&fp);
+    let rs_hash = chromaprint::hash_fingerprint(&fp);
+
+    assert_eq!(c_hash, 17249, "C simhash doesn't match expected");
+    assert_eq!(
+        c_hash, rs_hash,
+        "SimHash mismatch: C={}, Rust={}",
+        c_hash, rs_hash
+    );
+}
+
+#[test]
+fn test_encode_decode_roundtrip_via_both() {
+    // Generate a fingerprint with C, encode with Rust, decode with C, verify it matches
+    let data = load_raw_audio("test_stereo_44100.raw");
+
+    let c_ctx = CChromaprint::new(ALGORITHM_TEST2);
+    c_ctx.start(44100, 1);
+    c_ctx.feed(&data);
+    c_ctx.finish();
+    let c_raw = c_ctx.get_raw_fingerprint();
+
+    // Encode with Rust
+    let rs_encoded = chromaprint::encode_fingerprint(&c_raw, Algorithm::Test2);
+
+    // Decode with C
+    let (c_decoded, c_algo) = c_decode_fingerprint(rs_encoded.as_bytes(), true)
+        .expect("C failed to decode Rust-encoded fingerprint");
+    assert_eq!(c_algo, ALGORITHM_TEST2);
+    compare_fingerprints("cross_encode_decode", &c_raw, &c_decoded);
+
+    // Encode with C, decode with Rust
+    let c_encoded = c_ctx.get_fingerprint();
+    let (rs_decoded, rs_algo) = chromaprint::decode_fingerprint(&c_encoded)
+        .expect("Rust failed to decode C-encoded fingerprint");
+    assert_eq!(rs_algo, Algorithm::Test2);
+    compare_fingerprints("cross_decode_encode", &c_raw, &rs_decoded);
+}
