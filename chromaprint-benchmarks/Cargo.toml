@@ -17,3 +17,7 @@ cmake = "0.1"
 [[bench]]
 name = "fingerprint"
 harness = false
+
+[[bench]]
+name = "stages"
+harness = false
