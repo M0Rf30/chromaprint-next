@@ -41,6 +41,7 @@ impl ChromaExtractor {
     }
 
     /// Extract chroma features from an FFT power spectrum frame.
+    #[inline]
     pub fn extract(&self, frame: &[f32]) -> ChromaVector {
         let mut features = [0.0f64; NUM_BANDS];
 

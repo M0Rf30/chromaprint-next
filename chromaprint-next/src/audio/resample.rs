@@ -159,13 +159,10 @@ impl AvResampleContext {
                 // src bounds, and filter_offset..filter_offset+filter_length is within
                 // filter_bank bounds (phase < phase_count, bank has phase_count+1 phases).
                 let si = sample_index as usize;
-                let mut val: i32 = 0;
-                unsafe {
-                    for i in 0..filter_length {
-                        val += *src.get_unchecked(si + i) as i32
-                            * *filter_bank.get_unchecked(filter_offset + i) as i32;
-                    }
-                }
+                let mut val: i32 = crate::simd::dot_product_i16(
+                    &src[si..si + filter_length],
+                    &filter_bank[filter_offset..filter_offset + filter_length],
+                );
                 val = (val + (1 << (FILTER_SHIFT - 1))) >> FILTER_SHIFT;
                 dst[dst_index] = if (val as u32).wrapping_add(32768) > 65535 {
                     ((val >> 31) ^ 32767) as i16
