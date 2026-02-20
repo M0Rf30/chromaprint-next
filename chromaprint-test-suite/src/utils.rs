@@ -25,21 +25,26 @@ pub fn load_raw_audio(filename: &str) -> Vec<i16> {
 
 /// Compare two raw fingerprint arrays with detailed diff output on failure.
 pub fn compare_fingerprints(name: &str, c_raw: &[u32], rs_raw: &[u32]) {
-    if c_raw == rs_raw {
+    compare_fingerprints_labeled(name, "C", c_raw, "Rust", rs_raw);
+}
+
+/// Compare two raw fingerprint arrays with custom labels and detailed diff output on failure.
+pub fn compare_fingerprints_labeled(name: &str, label_a: &str, a: &[u32], label_b: &str, b: &[u32]) {
+    if a == b {
         return;
     }
 
     let mut diffs = Vec::new();
-    let max_len = c_raw.len().max(rs_raw.len());
+    let max_len = a.len().max(b.len());
     for i in 0..max_len {
-        let c_val = c_raw.get(i);
-        let rs_val = rs_raw.get(i);
-        if c_val != rs_val {
+        let a_val = a.get(i);
+        let b_val = b.get(i);
+        if a_val != b_val {
             diffs.push(format!(
-                "  [{}] C={} Rust={}",
+                "  [{}] {}={} {}={}",
                 i,
-                c_val.map_or("MISSING".to_string(), |v| v.to_string()),
-                rs_val.map_or("MISSING".to_string(), |v| v.to_string()),
+                label_a, a_val.map_or("MISSING".to_string(), |v| v.to_string()),
+                label_b, b_val.map_or("MISSING".to_string(), |v| v.to_string()),
             ));
         }
         if diffs.len() >= 20 {
@@ -49,10 +54,10 @@ pub fn compare_fingerprints(name: &str, c_raw: &[u32], rs_raw: &[u32]) {
     }
 
     panic!(
-        "{}: fingerprints differ!\n  C length: {}, Rust length: {}\n  Differences:\n{}",
+        "{}: fingerprints differ!\n  {} length: {}, {} length: {}\n  Differences:\n{}",
         name,
-        c_raw.len(),
-        rs_raw.len(),
+        label_a, a.len(),
+        label_b, b.len(),
         diffs.join("\n"),
     );
 }

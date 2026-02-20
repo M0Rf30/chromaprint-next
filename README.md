@@ -10,7 +10,12 @@ Produces **bit-identical fingerprints** to the C reference implementation across
 chromaprint/              C reference implementation (git submodule)
 chromaprint-next/         Rust library crate
 chromaprint-test-suite/   Cross-implementation comparison tests
+rusty-chromaprint/        Alternative Rust port by darksv (git submodule)
 ```
+
+## Why another Rust port?
+
+[rusty-chromaprint](https://github.com/darksv/rusty-chromaprint) is an existing pure-Rust port that works well for the default algorithm. However, it uses a different resampler, doesn't reproduce certain C bugs needed for database compatibility, and has incomplete presets for 3 of the 5 algorithm variants. chromaprint-next aims for strict bit-identical output across all configurations. See the [detailed comparison](chromaprint-next/docs/comparison-with-rusty-chromaprint.md).
 
 ## Getting started
 
@@ -21,10 +26,16 @@ cargo build -p chromaprint-next
 
 ## Running tests
 
-The test suite links both the C library (built automatically via CMake) and the Rust crate, feeding identical audio through both and asserting equality of raw fingerprints, encoded strings, and hashes.
+The test suite compares both Rust implementations (chromaprint-next and rusty-chromaprint) against the C reference library, which is built automatically via CMake. It feeds identical PCM audio through all three implementations and asserts equality of raw fingerprints, compressed encodings, and hashes.
 
 ```
 cargo test -p chromaprint-test-suite
+```
+
+Some rusty-chromaprint tests are `#[ignore]`d due to known incompatibilities (resampler differences, incomplete presets). To run them:
+
+```
+cargo test -p chromaprint-test-suite -- --ignored
 ```
 
 ## Documentation

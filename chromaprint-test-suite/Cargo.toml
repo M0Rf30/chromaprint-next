@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 chromaprint-next = { path = "../chromaprint-next" }
+rusty-chromaprint = { path = "../rusty-chromaprint/chromaprint" }
 
 [build-dependencies]
 cmake = "0.1"
