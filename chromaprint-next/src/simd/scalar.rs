@@ -23,3 +23,14 @@ pub fn stereo_to_mono(input: &[i16], output: &mut [i16]) {
         output[i] = ((input[i * 2] as i32 + input[i * 2 + 1] as i32) / 2) as i16;
     }
 }
+
+/// Scalar fallback: convert i16 samples to f32 and multiply by window coefficients.
+/// output[i] = input[i] as f32 * window[i]
+#[inline]
+pub fn window_apply(input: &[i16], window: &[f32], output: &mut [f32]) {
+    debug_assert_eq!(input.len(), window.len());
+    debug_assert_eq!(input.len(), output.len());
+    for i in 0..input.len() {
+        output[i] = input[i] as f32 * window[i];
+    }
+}

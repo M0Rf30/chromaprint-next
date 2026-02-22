@@ -59,3 +59,31 @@ pub fn stereo_to_mono(input: &[i16], output: &mut [i16]) {
         scalar::stereo_to_mono(input, output)
     }
 }
+
+/// Convert i16 samples to f32 and multiply by window coefficients.
+///
+/// output[i] = input[i] as f32 * window[i]
+/// All three slices must have the same length.
+/// i16→f32 conversion is exact (f32 has 24-bit mantissa), so SIMD
+/// produces bit-identical results to scalar.
+#[inline]
+pub fn window_apply(input: &[i16], window: &[f32], output: &mut [f32]) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        neon::window_apply(input, window, output)
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("sse2") {
+            unsafe { sse::window_apply(input, window, output) }
+        } else {
+            scalar::window_apply(input, window, output)
+        }
+    }
+
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")))]
+    {
+        scalar::window_apply(input, window, output)
+    }
+}

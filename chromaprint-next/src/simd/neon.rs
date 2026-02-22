@@ -107,6 +107,51 @@ pub fn stereo_to_mono(input: &[i16], output: &mut [i16]) {
     }
 }
 
+/// NEON-accelerated FFT window application.
+///
+/// Converts i16 samples to f32 and multiplies by pre-computed window
+/// coefficients. Processes 8 elements per iteration (two sets of 4 for ILP).
+#[inline]
+pub fn window_apply(input: &[i16], window: &[f32], output: &mut [f32]) {
+    debug_assert_eq!(input.len(), window.len());
+    debug_assert_eq!(input.len(), output.len());
+    let len = input.len();
+
+    unsafe {
+        let in_ptr = input.as_ptr();
+        let win_ptr = window.as_ptr();
+        let out_ptr = output.as_mut_ptr();
+        let chunks = len / 8;
+
+        for i in 0..chunks {
+            let offset = i * 8;
+            // Load 2 × 4 i16 values
+            let i16_lo = vld1_s16(in_ptr.add(offset));
+            let i16_hi = vld1_s16(in_ptr.add(offset + 4));
+            // Sign-extend i16 → i32
+            let i32_lo = vmovl_s16(i16_lo);
+            let i32_hi = vmovl_s16(i16_hi);
+            // Convert i32 → f32
+            let f32_lo = vcvtq_f32_s32(i32_lo);
+            let f32_hi = vcvtq_f32_s32(i32_hi);
+            // Load window coefficients
+            let win_lo = vld1q_f32(win_ptr.add(offset));
+            let win_hi = vld1q_f32(win_ptr.add(offset + 4));
+            // Multiply
+            let res_lo = vmulq_f32(f32_lo, win_lo);
+            let res_hi = vmulq_f32(f32_hi, win_hi);
+            // Store
+            vst1q_f32(out_ptr.add(offset), res_lo);
+            vst1q_f32(out_ptr.add(offset + 4), res_hi);
+        }
+
+        // Scalar tail (0-7 elements)
+        for i in (chunks * 8)..len {
+            *out_ptr.add(i) = *in_ptr.add(i) as f32 * *win_ptr.add(i);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +207,22 @@ mod tests {
 
         stereo_to_mono(&input, &mut actual);
         assert_eq!(expected, actual, "truncation-toward-zero mismatch");
+    }
+
+    #[test]
+    fn test_neon_window_apply_matches_scalar() {
+        for len in [1, 3, 4, 7, 8, 15, 16, 100, 4096] {
+            let input: Vec<i16> = (0..len).map(|i| ((i as i32 * 13 - 500) % 32768) as i16).collect();
+            let win: Vec<f32> = (0..len).map(|i| i as f32 * 0.001).collect();
+            let mut scalar_out = vec![0.0f32; len];
+            let mut neon_out = vec![0.0f32; len];
+
+            for i in 0..len {
+                scalar_out[i] = input[i] as f32 * win[i];
+            }
+
+            window_apply(&input, &win, &mut neon_out);
+            assert_eq!(scalar_out, neon_out, "mismatch for len={len}");
+        }
     }
 }

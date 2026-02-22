@@ -113,10 +113,12 @@ impl FftProcessor {
         // Check if the frame wraps around the ring buffer
         let end = ring_read + self.frame_size;
         if end <= ring_mask + 1 {
-            // Contiguous: no wrapping needed
-            for i in 0..self.frame_size {
-                self.fft_input[i] = self.ring_buffer[ring_read + i] as f32 * self.window[i];
-            }
+            // Contiguous: no wrapping needed — use SIMD
+            crate::simd::window_apply(
+                &self.ring_buffer[ring_read..ring_read + self.frame_size],
+                &self.window,
+                &mut self.fft_input,
+            );
         } else {
             // Wrapping: apply mask per element
             for i in 0..self.frame_size {

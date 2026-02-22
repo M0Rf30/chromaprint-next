@@ -102,3 +102,40 @@ pub unsafe fn stereo_to_mono(input: &[i16], output: &mut [i16]) {
             ((*in_ptr.add(i * 2) as i32 + *in_ptr.add(i * 2 + 1) as i32) / 2) as i16;
     }
 }
+
+/// SSE2-accelerated FFT window application.
+///
+/// Converts i16 samples to f32 and multiplies by pre-computed window
+/// coefficients. Loads 4 i16 values, sign-extends to i32 via
+/// `_mm_srai_epi16`+`_mm_unpacklo_epi16`, converts to f32, and multiplies.
+#[inline]
+#[target_feature(enable = "sse2")]
+pub unsafe fn window_apply(input: &[i16], window: &[f32], output: &mut [f32]) {
+    debug_assert_eq!(input.len(), window.len());
+    debug_assert_eq!(input.len(), output.len());
+    let len = input.len();
+    let in_ptr = input.as_ptr();
+    let win_ptr = window.as_ptr();
+    let out_ptr = output.as_mut_ptr();
+    let chunks = len / 4;
+
+    for i in 0..chunks {
+        let offset = i * 4;
+        // Load 4 i16 values (64 bits) into lower half of __m128i
+        let i16_vals = _mm_loadl_epi64(in_ptr.add(offset) as *const __m128i);
+        // Sign-extend i16 → i32: unpack low i16 with sign extension
+        let signs = _mm_srai_epi16(i16_vals, 15);
+        let i32_vals = _mm_unpacklo_epi16(i16_vals, signs);
+        // Convert i32 → f32
+        let f32_vals = _mm_cvtepi32_ps(i32_vals);
+        // Load 4 window f32 values and multiply
+        let win_vals = _mm_loadu_ps(win_ptr.add(offset));
+        let result = _mm_mul_ps(f32_vals, win_vals);
+        _mm_storeu_ps(out_ptr.add(offset), result);
+    }
+
+    // Scalar tail (0-3 elements)
+    for i in (chunks * 4)..len {
+        *out_ptr.add(i) = *in_ptr.add(i) as f32 * *win_ptr.add(i);
+    }
+}
