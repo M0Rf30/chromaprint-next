@@ -83,11 +83,10 @@ impl AudioProcessor {
                         .copy_from_slice(&input[pos..pos + to_load]);
                 }
                 2 => {
-                    for i in 0..to_load {
-                        let idx = (pos + i) * 2;
-                        self.buffer[self.buffer_offset + i] =
-                            ((input[idx] as i32 + input[idx + 1] as i32) / 2) as i16;
-                    }
+                    crate::simd::stereo_to_mono(
+                        &input[pos * 2..(pos + to_load) * 2],
+                        &mut self.buffer[self.buffer_offset..self.buffer_offset + to_load],
+                    );
                 }
                 _ => {
                     for i in 0..to_load {

@@ -12,3 +12,14 @@ pub fn dot_product_i16(a: &[i16], b: &[i16]) -> i32 {
     }
     val
 }
+
+/// Scalar fallback: mix interleaved stereo i16 pairs to mono by averaging.
+/// `input` has `output.len() * 2` elements (L0,R0,L1,R1,...).
+/// output[i] = (input[2*i] + input[2*i+1]) / 2
+#[inline]
+pub fn stereo_to_mono(input: &[i16], output: &mut [i16]) {
+    debug_assert_eq!(input.len(), output.len() * 2);
+    for i in 0..output.len() {
+        output[i] = ((input[i * 2] as i32 + input[i * 2 + 1] as i32) / 2) as i16;
+    }
+}
