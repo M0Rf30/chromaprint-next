@@ -273,6 +273,34 @@ mod tests {
     }
 
     #[test]
+    fn short_exceptional_section_errors() {
+        // Two values; normal bits 7,7,7,0,7,7,0 -> 5 exceptional bits, which
+        // need (5 * 5).div_ceil(8) = 4 bytes. Supply only 3: unpack_int5_array
+        // still yields 5 values from them, so only the length check (as in the
+        // C++ reference) rejects this input.
+        let normal = [7u8, 7, 7, 0, 7, 7, 0];
+        let mut out = vec![1u8, 0, 0, 2];
+        let mut packed3 = vec![0u8; (normal.len() * 3).div_ceil(8)];
+        for (i, &v) in normal.iter().enumerate() {
+            for k in 0..3 {
+                if ((v >> k) & 1) != 0 {
+                    let bit = i * 3 + k;
+                    packed3[bit / 8] |= 1 << (bit % 8);
+                }
+            }
+        }
+        out.extend_from_slice(&packed3);
+        out.extend_from_slice(&[0u8; 3]);
+        assert!(matches!(
+            decompress_raw(&out),
+            Err(Error::InvalidFingerprint)
+        ));
+        // With the 4th byte present the same input decodes.
+        out.push(0);
+        assert!(decompress_raw(&out).is_ok());
+    }
+
+    #[test]
     fn fuzz_never_panics() {
         let mut rng = Rng(0xFEED_FACE_1234_5678);
         for iter in 0..20000 {
