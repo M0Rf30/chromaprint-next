@@ -46,7 +46,7 @@ pub fn dot_product_i16(a: &[i16], b: &[i16]) -> i32 {
 
         // Scalar tail (0-3 elements)
         for i in 0..(len - offset) {
-            result += *a_ptr.add(offset + i) as i32 * *b_ptr.add(offset + i) as i32;
+            result = result.wrapping_add(*a_ptr.add(offset + i) as i32 * *b_ptr.add(offset + i) as i32);
         }
 
         result
