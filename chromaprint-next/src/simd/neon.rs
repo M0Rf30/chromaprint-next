@@ -7,7 +7,7 @@ use std::arch::aarch64::*;
 /// instruction-level parallelism.
 #[inline]
 pub fn dot_product_i16(a: &[i16], b: &[i16]) -> i32 {
-    assert_eq!(a.len(), b.len());
+    debug_assert_eq!(a.len(), b.len());
     let len = a.len();
 
     unsafe {
